@@ -10,10 +10,14 @@ from fastapi import FastAPI
 import pdb
 from backbones import get_model
 import os
-from elasticsearch import Elasticsearch
+from elasticsearch import Elasticsearch, RequestError, ElasticsearchException
 import inference as inf
+from starlette.requests import Request
+from starlette.responses import Response
+from elasticsearch import AsyncElasticsearch
+
 # es = Elasticsearch(HOST="localhost", PORT=9200)
-es = Elasticsearch([{'host': "0.0.0.0", 'port': 9200}])
+es = AsyncElasticsearch(["http://elasticsearch:9200"])
 
 from pydantic import BaseModel
 
@@ -28,6 +32,15 @@ class PersonImage(BaseModel):
 
 # es = AsyncElasticsearch()
 app = FastAPI()
+
+async def catch_exceptions_middleware(request: Request, call_next):
+    try:
+        return await call_next(request)
+    except Exception:
+        # you probably want some kind of logging here
+        return Response("Internal server error", status_code=500)
+
+app.middleware('http')(catch_exceptions_middleware)
 
 face_dict = {
     "id1": "./encoded/1npy",
@@ -108,14 +121,21 @@ class RecognizeModel():
 
 def decode_base64(base64Str):
     # encoded_image = 'data:image/jpeg;base64,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'
-    header, data = base64Str.split(',', 1)
+    if "," in base64Str:
+        _, data = base64Str.split(',', 1)
+    else: 
+        data = base64Str
     #print('header:', header)
     #print('  data:', data[:20])
+
     image_data = base64.b64decode(data)
     #print('result:', image_data[:20])
     np_array = np.frombuffer(image_data, np.uint8)
     #print(' array:', np_array[:2])
-    image = cv2.imdecode(np_array, cv2.IMREAD_UNCHANGED)
+    try:
+        image = cv2.imdecode(np_array, cv2.IMREAD_UNCHANGED)
+    except cv2.error as e:
+        print("loi cv2 ne")
     return image
 
 model = RecognizeModel(name= "r50")
@@ -127,31 +147,40 @@ def read_root():
 
 @app.post("/recognize")
 async def recognize(base64Image: Image):
+    retries=0
+
     img = decode_base64(base64Image.base64)
     model.inference(img)
     query = {
         "size": 5,
         "query": {
-        "script_score": {
-            "query": {
-                "match_all": {}
-            },
-            "script": {
-                "source": "cosineSimilarity(params.queryVector, 'title_vector')",
-                # "source": "l2norm(params.queryVector, 'title_vector')", #euclidean distance
-                "params": {
-                    "queryVector": model.feat[0] #target_embedding
+            "script_score": {
+                "query": {
+                    "match_all": {}
+                },
+                "script": {
+                    "source": "cosineSimilarity(params.queryVector, 'title_vector') + 1.0",
+                    # "source": "l2norm(params.queryVector, 'title_vector')", #euclidean distance
+                    "params": {
+                        "queryVector": list(model.feat[0]) #target_embedding
+                    }
                 }
             }
         }
-    }}
+    }
     # print(es.get(index="face_recognition", id="MI0090"))
-    res = es.search(index="face_recognition", body=query)
+    # try:
+    res = await es.search(index="face_recognition", body=query, ignore_unavailable=True)#, ignore=[400, 401, 403, 404, 409])
+    # res = es.get(index="face_recognition", id="MI0090")
+    # except ElasticsearchException as es1:
+        # return {"Hello": "1"}
+        # continue
+        # print(es1.status_code)
     print(res["hits"]["hits"][0]["_source"]["name"])
     return {
         "name": "{}".format(res["hits"]["hits"][0]["_source"]["name"]),
         "id": "{}".format(res["hits"]["hits"][0]["_id"])
-        }
+    }
 
     # return {"Hello": "1"}
 
