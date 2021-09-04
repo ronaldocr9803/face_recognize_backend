@@ -6,6 +6,7 @@ RUN apt-get update
 RUN apt install -y libgl1-mesa-glx
 
 RUN pip install opencv-python
+RUN pip install elasticsearch>=7.8.0 aiohttp
 
 EXPOSE 8000
 
