@@ -4,8 +4,6 @@ import cv2
 import numpy as np 
 from copy import deepcopy
 
-from models.net import ModelAgeGender
-from statistics import mean 
 
 
 def get_face(frame, coord):
