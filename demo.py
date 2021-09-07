@@ -1,6 +1,5 @@
 import os
 from  detection.retinaface import RetinaNetDetector
-import mlchain
 import cv2
 import numpy as np 
 from copy import deepcopy
