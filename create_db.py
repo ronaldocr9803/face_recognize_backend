@@ -7,7 +7,8 @@ import torch
 import inference as inf
 
 
-es = Elasticsearch("http://0.0.0.0:9200")#, timeout=30, max_retries=10, retry_on_timeout=True)
+# es = Elasticsearch("http://0.0.0.0:9200")#, timeout=30, max_retries=10, retry_on_timeout=True)
+es = Elasticsearch("http://elasticsearch:9200")
 
 def create_index(model):
     mapping = {
