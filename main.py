@@ -15,7 +15,8 @@ import inference as inf
 from starlette.requests import Request
 from starlette.responses import Response
 from elasticsearch import AsyncElasticsearch
-
+from  detection.retinaface import RetinaNetDetector
+from demo import get_face, draw_face
 # es = Elasticsearch(HOST="localhost", PORT=9200)
 es = AsyncElasticsearch(["http://elasticsearch:9200"])
 
@@ -139,7 +140,7 @@ def decode_base64(base64Str):
     return image
 
 model = RecognizeModel(name= "r50")
-
+detector = RetinaNetDetector()
 
 @app.get("/")
 def read_root():
@@ -190,3 +191,44 @@ def recognize(person: PersonImage):
     model.inference(img)
     doc = {"title_vector": model.feat[0], "name": person.name}
     es.create("face_recognition", id=person.id, body=doc)
+
+@app.post("/detect_recognize")
+async def detectAndRecognize(person: PersonImage):
+    img = decode_base64(person.base64Image)
+    det_faces = detector.predict(img)
+    results = []
+    for face_info in det_faces[0]:
+        face_img, face_crd = get_face(img, face_info)
+        model.inference(img)
+        query = {
+            "size": 5,
+            "query": {
+                "script_score": {
+                    "query": {
+                        "match_all": {}
+                    },
+                    "script": {
+                        "source": "cosineSimilarity(params.queryVector, 'title_vector') + 1.0",
+                        # "source": "l2norm(params.queryVector, 'title_vector')", #euclidean distance
+                        "params": {
+                            "queryVector": list(model.feat[0]) #target_embedding
+                        }
+                    }
+                }
+            }
+        }
+        # print(es.get(index="face_recognition", id="MI0090"))
+        # try:
+        res = await es.search(index="face_recognition", body=query, ignore_unavailable=True)#, ignore=[400, 401, 403, 404, 409])
+        # res = es.get(index="face_recognition", id="MI0090")
+        # except ElasticsearchException as es1:
+            # return {"Hello": "1"}
+            # continue
+            # print(es1.status_code)
+        print(res["hits"]["hits"][0]["_source"]["name"])
+        result = {
+            "name": "{}".format(res["hits"]["hits"][0]["_source"]["name"]),
+            "id": "{}".format(res["hits"]["hits"][0]["_id"])
+        }
+        results.append(result)
+    return results

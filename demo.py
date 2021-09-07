@@ -16,10 +16,15 @@ def get_face(frame, coord):
     w_f = int(r-l)
     h_f = int(b-t)
 
-    l_f = max(0, int(l - 0.2*w_f))
-    t_f = max(0, int(t - 0.2*h_f))
-    r_f = min(width, int(r + 0.2*w_f))
-    b_f = min(height, int(b + 0.05*h_f))
+    # l_f = max(0, int(l - 0.2*w_f))
+    # t_f = max(0, int(t - 0.2*h_f))
+    # r_f = min(width, int(r + 0.2*w_f))
+    # b_f = min(height, int(b + 0.05*h_f))
+
+    l_f = max(0, int(l))
+    t_f = max(0, int(t))
+    r_f = min(width, int(r))
+    b_f = min(height, int(b))
 
     face_img = frame[t_f:b_f, l_f:r_f, :]
     return face_img, (l_f, t_f, r_f, b_f)
