@@ -186,14 +186,14 @@ async def recognize(base64Image: Image):
     # return {"Hello": "1"}
 
 @app.post("/add_new_face")
-def recognize(person: Image):
+def recognize(person: PersonImage):
     img = decode_base64(person.base64Image)
     model.inference(img)
     doc = {"title_vector": model.feat[0], "name": person.name}
     es.create("face_recognition", id=person.id, body=doc)
 
 @app.post("/detect_recognize")
-async def detectAndRecognize(person: PersonImage):
+async def detectAndRecognize(person: Image):
     img = decode_base64(person.base64Image)
     det_faces = detector.predict(img)
     results = []
