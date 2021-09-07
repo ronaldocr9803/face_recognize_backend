@@ -3,8 +3,8 @@ import torch
 from detection.models.net import PriorBox, py_cpu_nms, decode, decode_landm
 from detection.models.cfg_retinaface import RetinaFace
 import cv2
-from mlchain import mlconfig
-mlconfig.load_config("mlconfig.yaml")
+# from mlchain import mlconfig
+# mlconfig.load_config("mlconfig.yaml")
 
 def check_keys(model, pretrained_state_dict):
     ckpt_keys = set(pretrained_state_dict.keys())
@@ -22,7 +22,7 @@ def remove_prefix(state_dict, prefix):
     return {f(key): value for key, value in state_dict.items()}
     
 class RetinaNetDetector:
-    def __init__(self, model_path=mlconfig.retina_face):
+    def __init__(self):
         cfg = {
             'name': 'mobilenet0.25',
             'min_sizes': [[16, 32], [64, 128], [256, 512]],
