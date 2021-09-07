@@ -186,7 +186,7 @@ async def recognize(base64Image: Image):
     # return {"Hello": "1"}
 
 @app.post("/add_new_face")
-def recognize(person: PersonImage):
+def recognize(person: Image):
     img = decode_base64(person.base64Image)
     model.inference(img)
     doc = {"title_vector": model.feat[0], "name": person.name}
