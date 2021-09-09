@@ -1,26 +1,35 @@
 import base64
+import io
+import os
+import pdb
+import re
 import time
 from typing import Optional
-import re
-import io
+
 import cv2
 import numpy as np
 import torch
-from fastapi import FastAPI
-import pdb
-from backbones import get_model
-import os
-from elasticsearch import Elasticsearch, RequestError, ElasticsearchException
-import inference as inf
+from elasticsearch import (AsyncElasticsearch, Elasticsearch,
+                           ElasticsearchException, RequestError)
+from fastapi import FastAPI, WebSocket
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.templating import Jinja2Templates
+from PIL import Image as im
+from pydantic import BaseModel
 from starlette.requests import Request
 from starlette.responses import Response
-from elasticsearch import AsyncElasticsearch
-from  detection.retinaface import RetinaNetDetector
-from demo import get_face, draw_face
+
+import inference as inf
+from backbones import get_model
+from demo import draw_face, get_face
+from detection.retinaface import RetinaNetDetector
+from fastapi import File, Form, UploadFile
+import utils as ut
+
 # es = Elasticsearch(HOST="localhost", PORT=9200)
 es = AsyncElasticsearch(["http://elasticsearch:9200"])
 
-from pydantic import BaseModel
 
 class Image(BaseModel):
     base64: str
@@ -33,15 +42,31 @@ class PersonImage(BaseModel):
 
 # es = AsyncElasticsearch()
 app = FastAPI()
+origins = [
+    "http://localhost.tiangolo.com",
+    "https://localhost.tiangolo.com",
+    "http://localhost",
+    "http://localhost:8000",
+]
 
-async def catch_exceptions_middleware(request: Request, call_next):
-    try:
-        return await call_next(request)
-    except Exception:
-        # you probably want some kind of logging here
-        return Response("Internal server error", status_code=500)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-app.middleware('http')(catch_exceptions_middleware)
+templates = Jinja2Templates(directory="templates")
+
+# async def catch_exceptions_middleware(request: Request, call_next):
+#     try:
+#         return await call_next(request)
+#     except Exception:
+#         # you probably want some kind of logging here
+#         return Response("Internal server error", status_code=500)
+
+# app.middleware('http')(catch_exceptions_middleware)
 
 face_dict = {
     "id1": "./encoded/1npy",
@@ -56,9 +81,6 @@ face_dict = {
     "id10": "./encoded/10.npy",
 }
 
-def listdir_fullpath(d):
-    print([os.path.join(d, f) for f in os.listdir(d) if not f.endswith('.DS_Store')])
-    return [os.path.join(d, f) for f in os.listdir(d) if not f.endswith('.DS_Store')]
 
 class RecognizeModel():
     def __init__(self, name):
@@ -86,7 +108,7 @@ class RecognizeModel():
     def compare_faces(self):
         
 
-        lst_paths = listdir_fullpath("./encoded/8")
+        lst_paths = ut.listdir_fullpath("./encoded/8")
 
         
         # # results = [self.compare_face(des_emb_path) for des_emb_path in lst_paths] #p.map(self.compare_face, lst_paths)
@@ -105,7 +127,7 @@ class RecognizeModel():
 #         print(end-start)
         # return dict(zip(lst_paths, results))
         results = {}
-        for face_path in listdir_fullpath("./encoded/8"):
+        for face_path in ut.listdir_fullpath("./encoded/8"):
             results[face_path] = self.compare_face(face_path)
 
         return results
@@ -120,37 +142,98 @@ class RecognizeModel():
 
 
 
-def decode_base64(base64Str):
-    # encoded_image = 'data:image/jpeg;base64,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'
-    if "," in base64Str:
-        _, data = base64Str.split(',', 1)
-    else: 
-        data = base64Str
-    #print('header:', header)
-    #print('  data:', data[:20])
-
-    image_data = base64.b64decode(data)
-    #print('result:', image_data[:20])
-    np_array = np.frombuffer(image_data, np.uint8)
-    #print(' array:', np_array[:2])
-    try:
-        image = cv2.imdecode(np_array, cv2.IMREAD_UNCHANGED)
-    except cv2.error as e:
-        print("loi cv2 ne")
-    return image
 
 model = RecognizeModel(name= "r50")
 detector = RetinaNetDetector()
 
-@app.get("/")
-def read_root():
+def generate_frames():
+    camera=cv2.VideoCapture(0)
+    while True:
+            
+        ## read the camera frame
+        success,frame=camera.read()
+        # print(frame)
+        if not success:
+            break
+        else:
+            ret,buffer=cv2.imencode('.jpg',frame)
+            frame=buffer.tobytes()
+
+        yield(b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+        key = cv2.waitKey(1) & 0xff
+        if key == ord("q"):
+            break
+
+@app.get("/test")
+async def read_root():
     return {"Hello": "World"}
+
+@app.get("/", response_class=HTMLResponse)
+async def read_root(request: Request):
+    return templates.TemplateResponse('index.html', {"request": request})
+
+    return {"Hello": "World"}
+
+@app.get("/items/{id}", response_class=HTMLResponse)
+async def read_item(request: Request, id: str):
+    return templates.TemplateResponse("index.html", {"request": request, "id": id})
+
+@app.get("/video")
+async def demo_video():
+    
+    # print(generate_frames(camera))
+    return StreamingResponse(generate_frames(), media_type="multipart/x-mixed-replace;boundary=frame")
+def demoYield():
+    i = 0
+    
+    while True:            
+        ## read the camera frame
+        
+        yield(i)
+        i = i +1
+        if i == 50:
+            break
+def demoCamera():
+    vid = cv2.VideoCapture(0)
+    while True:
+        ret, frame = vid.read()
+        # frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+
+        # if not ret:
+        #     break
+        yield frame
+        
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    print('Accepting client connection...')
+    await websocket.accept()
+    generator = generate_frames()#demoYield()
+    while True:
+        
+        payload = next(generator)
+        await websocket.send_text(payload)
+        try:
+            # Wait for any message from the client
+            data=await websocket.receive_text()
+            print(data)
+            # Send message to the client
+            generator = demoYield()
+            payload = next(generator)
+            await websocket.send_text(str(payload))
+            print("Sending")
+            # print(data)
+        except Exception as e:
+            print('error:', e)
+            break
+    print('Bye..')
 
 @app.post("/recognize")
 async def recognize(base64Image: Image):
     retries=0
 
-    img = decode_base64(base64Image.base64)
+    img = ut.decode_base64(base64Image.base64)
     model.inference(img)
     query = {
         "size": 5,
@@ -187,14 +270,15 @@ async def recognize(base64Image: Image):
 
 @app.post("/add_new_face")
 def recognize(person: PersonImage):
-    img = decode_base64(person.base64Image)
+    img = ut.decode_base64(person.base64Image)
     model.inference(img)
     doc = {"title_vector": model.feat[0], "name": person.name}
     es.create("face_recognition", id=person.id, body=doc)
 
+
 @app.post("/detect_recognize")
 async def detectAndRecognize(person: Image):
-    img = decode_base64(person.base64Image)
+    img = ut.decode_base64(person.base64Image)
     det_faces = detector.predict(img)
     results = []
     for face_info in det_faces[0]:
@@ -230,5 +314,23 @@ async def detectAndRecognize(person: Image):
             "name": "{}".format(res["hits"]["hits"][0]["_source"]["name"]),
             "id": "{}".format(res["hits"]["hits"][0]["_id"])
         }
+        results.append(result)
+    return results
+
+
+@app.post("/web/detect_recognize")
+async def detectAndRecognize(image: UploadFile = File(...)):
+    img = ut.load_image_into_numpy_array(await image.read())
+    img = cv2.cvtColor(img, cv2.COLOR_BGRA2RGB)
+    print(img.shape)
+    # import pdb; pdb.set_trace
+    det_faces = detector.predict(img)
+    results = []
+    for face_info in det_faces[0]:
+        face_img, face_crd = get_face(img, face_info)
+        result = {
+            "crd": list(face_crd),
+        }
+        cv2.imwrite("thangld.png", face_img)
         results.append(result)
     return results
