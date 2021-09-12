@@ -1,13 +1,13 @@
 version: "3.0"
 services:
   api:
-    build: .
+    build: ./backend
     ports: 
       - 8000:8000
     networks:
       - es-net
     volumes:
-      - .:/app    
+      - ./backend:/backend    
     depends_on: 
       - elasticsearch
 
