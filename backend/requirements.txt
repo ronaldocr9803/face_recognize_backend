@@ -5,3 +5,5 @@ torch==1.9.0+cpu
 uvicorn==0.15.0
 elasticsearch==7.14.0
 torchvision
+jinja2
+python-multipart
